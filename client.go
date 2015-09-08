@@ -39,24 +39,24 @@ type Bamboo interface {
 	// update a service
 	UpdateService(service *Service) (*Service, error)
 	// delete a service
-	DeleteService(name string) (string, error)
+	DeleteService(name string) (*Service, error)
 }
 
 var (
 	/* the url specified was invalid */
 	ErrInvalidEndpoint = errors.New("Invalid Marathon endpoint specified")
-	/* invalid or error response from marathon */
-	ErrInvalidResponse = errors.New("Invalid response from Marathon")
+	/* invalid or error response from bamboo */
+	ErrInvalidResponse = errors.New("Invalid response from bamboo")
 	/* some resource does not exists */
 	ErrDoesNotExist = errors.New("The resource does not exist")
-	/* all the marathon endpoints are down */
-	ErrMarathonDown = errors.New("All the Marathon hosts are presently down")
+	/* all the bamboo endpoints are down */
+	ErrBambooDown = errors.New("All the Marathon hosts are presently down")
 	/* unable to decode the response */
-	ErrInvalidResult = errors.New("Unable to decode the response from Marathon")
+	ErrInvalidResult = errors.New("Unable to decode the response from bamboo")
 	/* invalid argument */
 	ErrInvalidArgument = errors.New("The argument passed is invalid")
 	/* error return by marathon */
-	ErrMarathonError = errors.New("Marathon error")
+	ErrBambooError = errors.New("bamboo error")
 	/* the operation has timed out */
 	ErrTimeoutError = errors.New("The operation has timed out")
 )
@@ -69,6 +69,10 @@ type Client struct {
 	http *http.Client
 	// the bamboo http cluster
 	cluster httpcluster.Cluster
+}
+
+type Message struct {
+	Message string `json:"message"`
 }
 
 func NewClient(bambooUrl string) (Bamboo, error) {
@@ -164,11 +168,11 @@ func (client *Client) apiCall(method, uri, body string, result interface{}) (int
 		if status >= 200 && status <= 299 {
 			if result != nil {
 				if err := client.unMarshallDataToJson(strings.NewReader(content), result); err != nil {
-					client.log("apiCall(): failed to unmarshall the response from bamboo, error: %s", err)
+					log.Printf("apiCall(): failed to unmarshall the response from bamboo, error: %s", err)
 					return status, content, ErrInvalidResponse
 				}
 			}
-			log.Printf("apiCall() result: %V", result)
+			log.Printf("apiCall() result: %+v", result)
 			return status, content, nil
 		}
 		switch status {
@@ -217,11 +221,11 @@ func (client *Client) httpCall(method, uri, body string) (int, string, *http.Res
 				log.Printf("httpCall: %s, uri: %s, url: %s\n", method, uri, url)
 				if response.ContentLength != 0 {
 					/* step: read in the content from the request */
-					response_content, err := ioutil.ReadAll(response.Body)
+					responseContent, err := ioutil.ReadAll(response.Body)
 					if err != nil {
 						return response.StatusCode, "", response, err
 					}
-					content = string(response_content)
+					content = string(responseContent)
 				}
 				/* step: return the request */
 				return response.StatusCode, content, response, nil
