@@ -43,21 +43,21 @@ type Bamboo interface {
 }
 
 var (
-	/* the url specified was invalid */
+	// the url specified was invalid
 	ErrInvalidEndpoint = errors.New("Invalid Marathon endpoint specified")
-	/* invalid or error response from bamboo */
+	// invalid or error response from bamboo
 	ErrInvalidResponse = errors.New("Invalid response from bamboo")
-	/* some resource does not exists */
+	// some resource does not exists
 	ErrDoesNotExist = errors.New("The resource does not exist")
-	/* all the bamboo endpoints are down */
+	// all the bamboo endpoints are down
 	ErrBambooDown = errors.New("All the Marathon hosts are presently down")
-	/* unable to decode the response */
+	// unable to decode the response
 	ErrInvalidResult = errors.New("Unable to decode the response from bamboo")
-	/* invalid argument */
+	// invalid argument
 	ErrInvalidArgument = errors.New("The argument passed is invalid")
-	/* error return by marathon */
+	// error return by marathon
 	ErrBambooError = errors.New("bamboo error")
-	/* the operation has timed out */
+	// the operation has timed out
 	ErrTimeoutError = errors.New("The operation has timed out")
 )
 
@@ -67,6 +67,8 @@ type Client struct {
 	url string
 	// the http client
 	http *http.Client
+	// the output for the logger
+	logger *log.Logger
 	// the bamboo http cluster
 	cluster httpcluster.Cluster
 }
@@ -75,12 +77,16 @@ type Message struct {
 	Message string `json:"message"`
 }
 
-func NewClient(bambooUrl string) (Bamboo, error) {
-	if cluster, err := httpcluster.NewHttpCluster(bambooUrl, BAMBOO_HEALTH_CHECK_URI); err != nil {
+func NewClient(config Config) (Bamboo, error) {
+	if cluster, err := httpcluster.NewHttpCluster(config.URL, BAMBOO_HEALTH_CHECK_URI); err != nil {
 		return nil, err
 	} else {
 		service := new(Client)
-		service.url = bambooUrl
+		service.url = config.URL
+		if config.LogOutput == nil {
+			config.LogOutput = ioutil.Discard
+		}
+		service.logger = log.New(config.LogOutput, "[debug] ", log.LstdFlags|log.Lshortfile)
 		service.cluster = cluster
 		service.http = &http.Client{
 			Timeout: (time.Duration(HTTP_CLIENT_REQUEST_TIMEOUT) * time.Second),
@@ -160,19 +166,19 @@ func (client *Client) apiDelete(uri string, post, result interface{}) error {
 }
 
 func (client *Client) apiCall(method, uri, body string, result interface{}) (int, string, error) {
-	log.Printf("apiCall() method: %s, uri: %s, body: %s", method, uri, body)
+	client.log("apiCall() method: %s, uri: %s, body: %s", method, uri, body)
 	if status, content, _, err := client.httpCall(method, uri, body); err != nil {
 		return 0, "", err
 	} else {
-		log.Printf("apiCall() status: %d, content: %s\n", status, content)
+		client.log("apiCall() status: %d, content: %s\n", status, content)
 		if status >= 200 && status <= 299 {
 			if result != nil {
 				if err := client.unMarshallDataToJson(strings.NewReader(content), result); err != nil {
-					log.Printf("apiCall(): failed to unmarshall the response from bamboo, error: %s", err)
+					client.log("apiCall(): failed to unmarshall the response from bamboo, error: %s", err)
 					return status, content, ErrInvalidResponse
 				}
 			}
-			log.Printf("apiCall() result: %+v", result)
+			client.log("apiCall() result: %+v", result)
 			return status, content, nil
 		}
 		switch status {
@@ -202,7 +208,7 @@ func (client *Client) httpCall(method, uri, body string) (int, string, *http.Res
 		return 0, "", nil, err
 	} else {
 		url := fmt.Sprintf("%s/%s", member, uri)
-		log.Printf("httpCall(): %s, uri: %s, url: %s", method, uri, url)
+		client.log("httpCall(): %s, uri: %s, url: %s", method, uri, url)
 
 		if request, err := http.NewRequest(method, url, strings.NewReader(body)); err != nil {
 			return 0, "", nil, err
@@ -218,7 +224,7 @@ func (client *Client) httpCall(method, uri, body string) (int, string, *http.Res
 				return client.httpCall(method, uri, body)
 			} else {
 				/* step: lets read in any content */
-				log.Printf("httpCall: %s, uri: %s, url: %s\n", method, uri, url)
+				client.log("httpCall: %s, uri: %s, url: %s\n", method, uri, url)
 				if response.ContentLength != 0 {
 					/* step: read in the content from the request */
 					responseContent, err := ioutil.ReadAll(response.Body)
@@ -232,4 +238,8 @@ func (client *Client) httpCall(method, uri, body string) (int, string, *http.Res
 			}
 		}
 	}
+}
+
+func (client *Client) log(message string, args ...interface{}) {
+	client.logger.Printf(message+"\n", args...)
 }
